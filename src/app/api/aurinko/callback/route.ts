@@ -1,3 +1,5 @@
+import { exchangeCodeForAccessToken, getAccountDetails } from "@/lib/aurinko";
+import { db } from "@/server/db";
 import { auth } from "@clerk/nextjs/server";
 import { NextRequest, NextResponse } from "next/server";
 
@@ -14,5 +16,39 @@ export const GET = async (req: NextRequest) => {
     );
   }
   const code = params.get("code");
-  return NextResponse.json({ message: "hello" });
+  if (!code) {
+    return NextResponse.json(
+      {
+        message: "No code provided",
+      },
+      { status: 400 },
+    );
+  }
+  const token = await exchangeCodeForAccessToken(code);
+  if (!token) {
+    return NextResponse.json(
+      {
+        message: "Failed to Exchange code",
+      },
+      { status: 400 },
+    );
+  }
+  const accountDetails = await getAccountDetails(token.accessToken);
+
+  await db.account.upsert({
+    where: {
+      id: token.accountId.toString(),
+    },
+    update: {
+      accessToken: token.accessToken,
+    },
+    create: {
+      id: token.accountId.toString(),
+      userId,
+      emailAddress: accountDetails?.email as string,
+      name: accountDetails?.name as string,
+      accessToken: token.accessToken,
+    },
+  });
+  return NextResponse.redirect(new URL("/mail", req.url));
 };
